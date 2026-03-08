@@ -4,7 +4,7 @@ import LanguageSelector from "./LanguageSelector";
 import ReactMarkdown from "react-markdown";
 import { Send, Bot, User, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useElevenLabsVoice } from "@/hooks/useElevenLabsVoice";
+import { useWebSpeech } from "@/hooks/useWebSpeech";
 
 interface Message {
   role: "assistant" | "user";
@@ -23,6 +23,16 @@ const TypingIndicator = () => (
   </div>
 );
 
+const MessageSpeakerButton = ({ text, speakFn, stopFn, isSpeaking }: { text: string; speakFn: (t: string) => void; stopFn: () => void; isSpeaking: boolean }) => (
+  <button
+    onClick={() => isSpeaking ? stopFn() : speakFn(text)}
+    className="inline-flex items-center justify-center w-6 h-6 rounded-full glass border border-glass text-muted-foreground hover:text-[hsl(28,100%,64%)] transition-all mt-1 shrink-0"
+    title={isSpeaking ? "Stop speaking" : "Play aloud"}
+  >
+    {isSpeaking ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+  </button>
+);
+
 const ChatInterface = () => {
   const { lang } = useLanguage();
   const isHi = lang === "hi";
@@ -31,11 +41,17 @@ const ChatInterface = () => {
   const [inputVal, setInputVal] = useState("");
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { listening, speaking, voiceEnabled, setVoiceEnabled, speak, stopSpeaking, startListening, stopListening } = useElevenLabsVoice();
+  const { listening, speaking, voiceEnabled, setVoiceEnabled, speak, stopSpeaking, startListening, stopListening } = useWebSpeech();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
+
+  // Load voices on mount (needed for some browsers)
+  useEffect(() => {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }, []);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || streaming) return;
@@ -90,7 +106,7 @@ const ChatInterface = () => {
         }
       }
 
-      // Speak the final response
+      // Auto-speak the response if voice is enabled
       if (assistantContent && voiceEnabled) {
         speak(assistantContent);
       }
@@ -122,7 +138,7 @@ const ChatInterface = () => {
               <button
                 onClick={() => { setVoiceEnabled(!voiceEnabled); if (speaking) stopSpeaking(); }}
                 className={`p-2 rounded-xl glass border transition-all ${voiceEnabled ? "border-[hsl(28_100%_54%/0.4)] text-[hsl(28,100%,64%)]" : "border-glass text-muted-foreground"}`}
-                title={voiceEnabled ? "Disable voice" : "Enable voice"}
+                title={voiceEnabled ? "Disable auto-speak" : "Enable auto-speak"}
               >
                 {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </button>
@@ -209,19 +225,29 @@ const ChatInterface = () => {
                       <Bot className="h-4 w-4 text-white" />
                     </div>
                   )}
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "gradient-brand text-white rounded-br-sm shadow-brand"
-                        : "glass border border-glass text-foreground rounded-bl-sm"
-                    }`}
-                  >
-                    {msg.role === "assistant" ? (
-                      <div className="prose prose-sm prose-invert max-w-none [&_p]:mb-2 [&_ul]:mb-2 [&_ol]:mb-2 [&_li]:mb-0.5">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <span className="whitespace-pre-line">{msg.content}</span>
+                  <div className="flex flex-col gap-1 max-w-[80%]">
+                    <div
+                      className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        msg.role === "user"
+                          ? "gradient-brand text-white rounded-br-sm shadow-brand"
+                          : "glass border border-glass text-foreground rounded-bl-sm"
+                      }`}
+                    >
+                      {msg.role === "assistant" ? (
+                        <div className="prose prose-sm prose-invert max-w-none [&_p]:mb-2 [&_ul]:mb-2 [&_ol]:mb-2 [&_li]:mb-0.5">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <span className="whitespace-pre-line">{msg.content}</span>
+                      )}
+                    </div>
+                    {msg.role === "assistant" && msg.content && (
+                      <MessageSpeakerButton
+                        text={msg.content}
+                        speakFn={speak}
+                        stopFn={stopSpeaking}
+                        isSpeaking={speaking}
+                      />
                     )}
                   </div>
                   {msg.role === "user" && (
@@ -252,7 +278,9 @@ const ChatInterface = () => {
             <div className="flex gap-2 items-center">
               <button
                 onMouseDown={() => startListening()}
-                onMouseUp={async () => { const text = await stopListening(); if (text) setInputVal(text); }}
+                onMouseUp={async () => { const text = await stopListening(); if (text) sendMessage(text); }}
+                onTouchStart={() => startListening()}
+                onTouchEnd={async () => { const text = await stopListening(); if (text) sendMessage(text); }}
                 className={`p-2.5 rounded-xl border transition-all duration-200 ${
                   listening
                     ? "gradient-brand border-transparent text-white shadow-brand animate-pulse"
