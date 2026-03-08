@@ -35,7 +35,7 @@ const MessageSpeakerButton = ({ text, speakFn, stopFn, isSpeaking }: { text: str
 
 const ChatInterface = () => {
   const { lang } = useLanguage();
-  const isHi = lang === "hi";
+  const tl = (m: Record<string, string>) => m[lang] || m["en"];
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState("");
