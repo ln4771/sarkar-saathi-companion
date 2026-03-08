@@ -383,13 +383,77 @@ const FormFiller = ({
                                 </div>
                             </div>
                         </div>
-                        {scheme.officialUrl && (
-                            <a href={scheme.officialUrl} target="_blank" rel="noopener noreferrer"
-                                className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl gradient-brand text-white text-xs font-semibold shadow-brand hover:scale-[1.02] transition-all">
-                                <ArrowRight className="h-3.5 w-3.5" />
-                                {isHi ? "आधिकारिक पोर्टल पर जाएँ" : "Go to Official Portal"}
-                            </a>
+
+                        {!applied ? (
+                            <button
+                                onClick={async () => {
+                                    if (!user) {
+                                        const msg = isHi ? "कृपया पहले लॉगिन करें" : "Please login first to apply";
+                                        speak(msg);
+                                        return;
+                                    }
+                                    setApplying(true);
+                                    try {
+                                        const { error } = await supabase.from("applications").insert({
+                                            user_id: user.id,
+                                            scheme_id: scheme.id,
+                                            scheme_name: scheme.name,
+                                            full_name: formData.name || formData.full_name || "",
+                                            email: user.email || "",
+                                            mobile_number: formData.mobile || formData.phone || "",
+                                            annual_income: formData.income || formData.annual_income || "",
+                                            land_size: formData.land || formData.land_size || "",
+                                            aadhaar_status: formData.aadhaar || "",
+                                            family_size: formData.family_size || formData.familyMembers || "",
+                                            category: formData.category || formData.caste || "",
+                                            additional_info: formData as any,
+                                            status: "submitted",
+                                        });
+                                        if (error) throw error;
+                                        setApplied(true);
+                                        const successMsg = isHi
+                                            ? "🎉 आवेदन सफलतापूर्वक जमा हो गया! आप डैशबोर्ड में स्थिति देख सकते हैं।"
+                                            : "🎉 Application submitted successfully! You can track status in your Dashboard.";
+                                        speak(successMsg);
+
+                                        // Prototype: auto-approve after 1 day simulation (10 seconds for demo)
+                                        setTimeout(async () => {
+                                            await supabase
+                                                .from("applications")
+                                                .update({ status: "approved" } as any)
+                                                .eq("user_id", user.id)
+                                                .eq("scheme_id", scheme.id)
+                                                .eq("status", "submitted");
+                                        }, 10000);
+                                    } catch (err: any) {
+                                        speak(isHi ? "आवेदन जमा करने में त्रुटि हुई।" : "Failed to submit application.");
+                                    } finally {
+                                        setApplying(false);
+                                    }
+                                }}
+                                disabled={applying}
+                                className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl gradient-brand text-white text-xs font-semibold shadow-brand hover:scale-[1.02] transition-all disabled:opacity-50"
+                            >
+                                {applying ? (
+                                    <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                ) : (
+                                    <Send className="h-3.5 w-3.5" />
+                                )}
+                                {isHi ? "आवेदन जमा करें" : "Submit Application"}
+                            </button>
+                        ) : (
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                                className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center">
+                                <CheckCircle className="h-6 w-6 text-emerald-400 mx-auto mb-1" />
+                                <p className="text-xs text-emerald-300 font-semibold">
+                                    {isHi ? "🎉 आवेदन सफलतापूर्वक जमा!" : "🎉 Application Submitted!"}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                    {isHi ? "स्थिति डैशबोर्ड में देखें" : "Track status in Dashboard"}
+                                </p>
+                            </motion.div>
                         )}
+
                         <button onClick={onDone}
                             className="mt-2 w-full py-2 rounded-xl glass border border-glass text-xs text-muted-foreground hover:text-white transition-all">
                             {isHi ? "← वापस जाएँ" : "← Back to Schemes"}
