@@ -1,8 +1,8 @@
-import AIAssistant from "@/components/AIAssistant";
+import ChatInterface from "@/components/ChatInterface";
 
 const AssistantPage = () => (
   <div className="min-h-screen bg-background">
-    <AIAssistant />
+    <ChatInterface />
   </div>
 );
 

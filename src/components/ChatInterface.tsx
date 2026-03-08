@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { useSearchParams } from "react-router-dom";
-import { schemes } from "@/data/schemes";
 import LanguageSelector from "./LanguageSelector";
-import { Send, Bot, User, Sparkles, CheckCircle, XCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import ReactMarkdown from "react-markdown";
+import { Send, Bot, User, Mic, MicOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Message {
-  from: "bot" | "user";
-  text: string;
+  role: "assistant" | "user";
+  content: string;
 }
 
 const TypingIndicator = () => (
@@ -24,148 +24,140 @@ const TypingIndicator = () => (
 );
 
 const ChatInterface = () => {
-  const { lang, tr } = useLanguage();
-  const [searchParams] = useSearchParams();
-  const preSelectedScheme = searchParams.get("scheme");
+  const { lang } = useLanguage();
   const isHi = lang === "hi";
 
-  const [step, setStep] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [typing, setTyping] = useState(false);
-  const [showSmsPopup, setShowSmsPopup] = useState(false);
-  const [form, setForm] = useState({ income: "", land: "", aadhaar: "", bank: "" });
-  const [selectedScheme, setSelectedScheme] = useState(preSelectedScheme || "");
   const [inputVal, setInputVal] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [listening, setListening] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
-  const addBotMsg = (text: string) => {
-    setTyping(true);
-    setTimeout(() => {
-      setMessages((prev) => [...prev, { from: "bot", text }]);
-      setTyping(false);
-    }, 1200);
-  };
-
-  const addUserMsg = (text: string) => {
-    setMessages((prev) => [...prev, { from: "user", text }]);
+  const langMap: Record<string, string> = {
+    en: "en-IN", hi: "hi-IN", ta: "ta-IN", mr: "mr-IN", te: "te-IN",
   };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+  }, [messages, streaming]);
 
-  useEffect(() => {
-    const greeting = isHi
-      ? "🙏 नमस्ते! सरकार साथी में आपका स्वागत है।"
-      : "🙏 Namaste! Welcome to Sarkar Saathi.";
-    addBotMsg(greeting);
-    setTimeout(() => {
-      setStep(1);
-      const q = isHi
-        ? "आपको किस योजना में मदद चाहिए? नीचे से चुनें।"
-        : "Which scheme do you need help with? Pick one below.";
-      addBotMsg(q);
-    }, 2000);
-  }, []);
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || streaming) return;
+    const userMsg: Message = { role: "user", content: text.trim() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInputVal("");
+    setStreaming(true);
 
-  const handleSchemeSelect = (id: string) => {
-    const scheme = schemes.find((s) => s.id === id);
-    if (!scheme) return;
-    setSelectedScheme(id);
-    addUserMsg(isHi ? scheme.nameHi : scheme.name);
-    setStep(2);
-    setTimeout(() => {
-      addBotMsg(
-        isHi
-          ? `${scheme.nameHi} के लिए पात्रता जाँचने के लिए कुछ जानकारी दें:`
-          : `To check eligibility for ${scheme.name}, I need a few details:`
-      );
-    }, 500);
-  };
+    try {
+      const res = await supabase.functions.invoke("chat", {
+        body: { messages: newMessages, mode: "general" },
+      });
 
-  const handleFormSubmit = () => {
-    const scheme = schemes.find((s) => s.id === selectedScheme);
-    if (!scheme) return;
+      if (res.error) throw res.error;
 
-    addUserMsg(
-      isHi
-        ? `आय: ₹${form.income}, भूमि: ${form.land} एकड़`
-        : `Income: ₹${form.income}, Land: ${form.land} acres`
-    );
-    setStep(3);
+      const reader = res.data instanceof ReadableStream
+        ? res.data.getReader()
+        : new Response(res.data).body?.getReader();
 
-    const income = parseInt(form.income) || 0;
-    const land = parseFloat(form.land) || 0;
-    const hasAadhaar = form.aadhaar.length >= 4;
+      if (!reader) throw new Error("No reader");
 
-    let eligible = true;
-    const reasons: string[] = [];
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
-    if (scheme.maxIncome && income > scheme.maxIncome) {
-      eligible = false;
-      reasons.push(isHi ? `आय सीमा ₹${scheme.maxIncome} से अधिक` : `Income exceeds ₹${scheme.maxIncome}`);
-    }
-    if (scheme.maxLand && land > scheme.maxLand * 2.47) {
-      eligible = false;
-      reasons.push(isHi ? `भूमि सीमा से अधिक` : `Land exceeds limit`);
-    }
-    if (scheme.requiresAadhaar && !hasAadhaar) {
-      eligible = false;
-      reasons.push(isHi ? "आधार नंबर आवश्यक है" : "Aadhaar number is required");
-    }
-
-    setTimeout(() => {
-      if (eligible) {
-        addBotMsg(
-          isHi
-            ? `✅ बधाई! आप ${scheme.nameHi} के लिए पात्र हैं!\n\n📋 आवश्यक दस्तावेज़:\n${scheme.documentsHi.map(d => `• ${d}`).join("\n")}\n\n🏢 निकटतम CSC केंद्र पर जाएँ।`
-            : `✅ Congratulations! You are eligible for ${scheme.name}!\n\n📋 Documents needed:\n${scheme.documents.map(d => `• ${d}`).join("\n")}\n\n🏢 Visit your nearest CSC center to apply.`
-        );
-        setTimeout(() => setShowSmsPopup(true), 2000);
-      } else {
-        addBotMsg(
-          isHi
-            ? `❌ माफ़ कीजिए, आप पात्र नहीं हैं।\nकारण: ${reasons.join(", ")}\n\nमैं अन्य योजनाएँ सुझा सकता हूँ।`
-            : `❌ Sorry, you may not be eligible.\nReasons: ${reasons.join(", ")}\n\nI can suggest other schemes.`
-        );
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (!line.startsWith("data: ") || line.includes("[DONE]")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            const delta = json.choices?.[0]?.delta?.content;
+            if (delta) {
+              assistantContent += delta;
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+                return updated;
+              });
+            }
+          } catch {}
+        }
       }
-    }, 1000);
+    } catch (e) {
+      console.error("Chat error:", e);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: isHi ? "माफ़ करें, कोई त्रुटि हुई। कृपया पुनः प्रयास करें।" : "Sorry, something went wrong. Please try again." },
+      ]);
+    } finally {
+      setStreaming(false);
+    }
   };
 
-  const suggestedSchemes = preSelectedScheme
-    ? schemes.filter((s) => s.id === preSelectedScheme)
-    : schemes.slice(0, 6);
+  const startListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = langMap[lang] || "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (e: any) => {
+      setInputVal(e.results[0][0].transcript);
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-10 px-4">
+    <div className="min-h-screen flex items-center justify-center py-6 px-4">
       <div className="w-full max-w-2xl">
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
+        {/* Header */}
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-0.5">
                 <div className="w-1.5 h-5 rounded-full gradient-brand" />
                 <span className="text-xs text-muted-foreground uppercase tracking-widest font-medium">AI Assistant</span>
               </div>
-              <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-white">Sarkar Saathi</h2>
+              <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-white">Sarkar Saathi AI</h2>
             </div>
             <LanguageSelector />
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+        {/* Chat container */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
           className="glass-card rounded-3xl border border-glass overflow-hidden flex flex-col shadow-elevated"
-          style={{ height: "72vh" }}>
-          <div className="gradient-brand px-5 py-4 flex items-center gap-3 shrink-0">
+          style={{ height: "76vh" }}
+        >
+          {/* Header bar */}
+          <div className="gradient-brand px-5 py-3.5 flex items-center gap-3 shrink-0">
             <div className="relative">
-              <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
-                <Bot className="h-5 w-5 text-white" />
+              <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                <Bot className="h-4.5 w-4.5 text-white" />
               </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-white" />
+              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white" />
             </div>
             <div className="flex-1">
-              <h3 className="font-['Space_Grotesk'] font-bold text-white text-sm">Sarkar Saathi Bot</h3>
+              <h3 className="font-bold text-white text-sm">Sarkar Saathi Bot</h3>
               <p className="text-xs text-white/70 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /> Online · AI Powered
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                {listening ? "Listening..." : "Online · AI Powered"}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -175,19 +167,71 @@ const ChatInterface = () => {
             </div>
           </div>
 
+          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {messages.length === 0 && !streaming && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-brand">
+                  <Bot className="h-8 w-8 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-['Space_Grotesk'] font-bold text-white text-lg mb-1">
+                    {isHi ? "सरकार साथी AI से पूछें" : "Ask Sarkar Saathi AI"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    {isHi
+                      ? "सरकारी योजनाओं, पात्रता, दस्तावेज़ों, या ऐप के बारे में कुछ भी पूछें।"
+                      : "Ask anything about government schemes, eligibility, documents, or how to use this app."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center mt-2">
+                  {[
+                    isHi ? "PM-KISAN क्या है?" : "What is PM-KISAN?",
+                    isHi ? "आवास योजना की पात्रता?" : "Eligibility for PM Awas?",
+                    isHi ? "छात्रवृत्ति कैसे मिलेगी?" : "How to get scholarships?",
+                    isHi ? "डैशबोर्ड कैसे देखें?" : "How to use the dashboard?",
+                  ].map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => sendMessage(q)}
+                      className="px-3 py-2 rounded-xl glass border border-glass text-xs font-medium text-muted-foreground hover:text-white hover:border-[hsl(28_100%_54%/0.4)] hover:bg-[hsl(28_100%_54%/0.08)] transition-all duration-200"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
             <AnimatePresence>
               {messages.map((msg, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 12, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className={`flex gap-2.5 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
-                  {msg.from === "bot" && (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  {msg.role === "assistant" && (
                     <div className="w-8 h-8 rounded-full gradient-brand flex items-center justify-center shrink-0 mt-0.5 shadow-brand">
                       <Bot className="h-4 w-4 text-white" />
                     </div>
                   )}
-                  <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm whitespace-pre-line leading-relaxed ${msg.from === "user" ? "gradient-brand text-white rounded-br-sm shadow-brand" : "glass border border-glass text-foreground rounded-bl-sm"
-                    }`}>{msg.text}</div>
-                  {msg.from === "user" && (
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                      msg.role === "user"
+                        ? "gradient-brand text-white rounded-br-sm shadow-brand"
+                        : "glass border border-glass text-foreground rounded-bl-sm"
+                    }`}
+                  >
+                    {msg.role === "assistant" ? (
+                      <div className="prose prose-sm prose-invert max-w-none [&_p]:mb-2 [&_ul]:mb-2 [&_ol]:mb-2 [&_li]:mb-0.5">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <span className="whitespace-pre-line">{msg.content}</span>
+                    )}
+                  </div>
+                  {msg.role === "user" && (
                     <div className="w-8 h-8 rounded-full glass border border-glass flex items-center justify-center shrink-0 mt-0.5">
                       <User className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -196,97 +240,62 @@ const ChatInterface = () => {
               ))}
             </AnimatePresence>
 
-            {typing && (
+            {streaming && messages[messages.length - 1]?.content === "" && (
               <div className="flex gap-2.5 justify-start">
                 <div className="w-8 h-8 rounded-full gradient-brand flex items-center justify-center shrink-0 shadow-brand">
                   <Bot className="h-4 w-4 text-white" />
                 </div>
-                <div className="glass border border-glass rounded-2xl rounded-bl-sm"><TypingIndicator /></div>
+                <div className="glass border border-glass rounded-2xl rounded-bl-sm">
+                  <TypingIndicator />
+                </div>
               </div>
             )}
 
-            {step === 1 && !typing && messages.length >= 2 && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                className="flex flex-wrap gap-2 mt-2 pl-10">
-                {suggestedSchemes.map((s) => (
-                  <button key={s.id} onClick={() => handleSchemeSelect(s.id)}
-                    className="px-3 py-2 rounded-xl glass border border-glass text-sm font-medium text-foreground hover:border-[hsl(28_100%_54%/0.4)] hover:text-white hover:bg-[hsl(28_100%_54%/0.1)] transition-all duration-200">
-                    {isHi ? s.nameHi : s.name}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-
-            {step === 2 && !typing && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                className="ml-10 glass-card rounded-2xl border border-glass p-4 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Sparkles className="h-4 w-4 text-[hsl(28,100%,64%)]" />
-                  <span className="text-sm font-semibold text-white">
-                    {isHi ? "पात्रता जानकारी" : "Eligibility Details"}
-                  </span>
-                </div>
-                {[
-                  { key: "income", label: isHi ? "वार्षिक आय (₹)" : "Annual Income (₹)", placeholder: "150000", type: "number" },
-                  { key: "land", label: isHi ? "भूमि (एकड़)" : "Land Size (Acres)", placeholder: "3.5", type: "number" },
-                  { key: "aadhaar", label: isHi ? "आधार (अंतिम 4 अंक)" : "Aadhaar (last 4 digits)", placeholder: "1234", type: "text" },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                    <input type={field.type} value={(form as any)[field.key]}
-                      maxLength={field.key === "aadhaar" ? 4 : undefined}
-                      onChange={(e) => setForm({ ...form, [field.key]: field.key === "aadhaar" ? e.target.value.replace(/\D/g, "") : e.target.value })}
-                      placeholder={field.placeholder}
-                      className="w-full mt-1 px-3 py-2.5 rounded-xl bg-[hsl(220_20%_8%)] border border-glass text-white placeholder:text-muted-foreground/50 text-sm focus:outline-none focus:border-[hsl(28_100%_54%/0.5)] transition-all" />
-                  </div>
-                ))}
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">{isHi ? "बैंक खाता" : "Bank Account"}</label>
-                  <select value={form.bank} onChange={(e) => setForm({ ...form, bank: e.target.value })}
-                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-[hsl(220_20%_8%)] border border-glass text-white text-sm focus:outline-none focus:border-[hsl(28_100%_54%/0.5)] transition-all appearance-none">
-                    <option value="">{isHi ? "चुनें" : "Select"}</option>
-                    <option value="yes">{isHi ? "हाँ" : "Yes"}</option>
-                    <option value="no">{isHi ? "नहीं" : "No"}</option>
-                  </select>
-                </div>
-                <button onClick={handleFormSubmit} disabled={!form.income || !form.aadhaar}
-                  className="w-full py-3 rounded-xl gradient-brand text-white font-semibold text-sm shadow-brand disabled:opacity-40 hover:shadow-[0_0_40px_hsl(28_100%_54%/0.4)] transition-all duration-200 flex items-center justify-center gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  {tr("checkEligibility")}
-                </button>
-              </motion.div>
-            )}
             <div ref={bottomRef} />
+          </div>
+
+          {/* Input bar */}
+          <div className="p-3 border-t border-glass shrink-0">
+            <div className="flex gap-2 items-center">
+              <button
+                onMouseDown={startListening}
+                onMouseUp={stopListening}
+                className={`p-2.5 rounded-xl border transition-all duration-200 ${
+                  listening
+                    ? "gradient-brand border-transparent text-white shadow-brand animate-pulse"
+                    : "glass border-glass text-muted-foreground hover:text-white"
+                }`}
+                title="Hold to speak"
+              >
+                {listening ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+              </button>
+              <input
+                type="text"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendMessage(inputVal)}
+                placeholder={isHi ? "योजनाओं के बारे में कुछ भी पूछें..." : "Ask anything about schemes..."}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[hsl(220_20%_8%)] border border-glass text-white placeholder:text-muted-foreground/50 text-sm focus:outline-none focus:border-[hsl(28_100%_54%/0.5)] transition-all"
+              />
+              <button
+                onClick={() => sendMessage(inputVal)}
+                disabled={!inputVal.trim() || streaming}
+                className="p-2.5 rounded-xl gradient-brand text-white shadow-brand disabled:opacity-40 hover:shadow-[0_0_30px_hsl(28_100%_54%/0.4)] hover:scale-[1.05] transition-all duration-200"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </motion.div>
 
-        <AnimatePresence>
-          {showSmsPopup && (
-            <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.9 }}
-              className="fixed bottom-6 right-6 w-80 glass-card rounded-3xl border border-emerald-500/30 p-5 shadow-elevated z-50">
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                    <CheckCircle className="h-5 w-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <span className="font-bold text-white text-sm">Eligible!</span>
-                    <p className="text-xs text-emerald-400">Application Reference Created</p>
-                  </div>
-                </div>
-                <button onClick={() => setShowSmsPopup(false)} className="text-muted-foreground hover:text-white transition-colors">
-                  <XCircle className="h-4 w-4" />
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {isHi
-                  ? "आपकी पात्रता रिपोर्ट तैयार है। आवेदन ID: SS-2024-78432"
-                  : "Your eligibility report is ready. Application ID: SS-2024-78432"}
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1 }}
+          className="text-center text-xs text-muted-foreground mt-3"
+        >
+          🎙️ {isHi ? "माइक बटन दबाकर बोलें — हिंदी, तमिल, तेलुगु, मराठी में भी" : "Hold mic button to speak in Hindi, Tamil, Telugu, Marathi & more"}
+        </motion.p>
       </div>
     </div>
   );
