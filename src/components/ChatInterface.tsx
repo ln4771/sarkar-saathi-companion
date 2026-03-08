@@ -251,8 +251,8 @@ const ChatInterface = () => {
           <div className="p-3 border-t border-glass shrink-0">
             <div className="flex gap-2 items-center">
               <button
-                onMouseDown={startListening}
-                onMouseUp={stopListening}
+                onMouseDown={() => startListening()}
+                onMouseUp={async () => { const text = await stopListening(); if (text) setInputVal(text); }}
                 className={`p-2.5 rounded-xl border transition-all duration-200 ${
                   listening
                     ? "gradient-brand border-transparent text-white shadow-brand animate-pulse"
