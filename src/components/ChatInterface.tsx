@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { schemes } from "@/data/schemes";
 import LanguageSelector from "./LanguageSelector";
+import ApplicationForm from "./ApplicationForm";
 import { Send, Bot, User, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -13,15 +14,23 @@ interface Message {
   content: string;
 }
 
+interface ApplyData {
+  scheme_id: string;
+  scheme_name: string;
+  prefill: Record<string, string>;
+}
+
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 async function streamChat({
   messages,
+  mode,
   onDelta,
   onDone,
   onError,
 }: {
   messages: Message[];
+  mode?: string;
   onDelta: (text: string) => void;
   onDone: () => void;
   onError: (err: string) => void;
@@ -32,7 +41,7 @@ async function streamChat({
       "Content-Type": "application/json",
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, mode }),
   });
 
   if (!resp.ok) {
@@ -73,6 +82,21 @@ async function streamChat({
   onDone();
 }
 
+function extractApplyScheme(content: string): ApplyData | null {
+  const regex = /```APPLY_SCHEME\s*\n([\s\S]*?)\n```/;
+  const match = content.match(regex);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function stripApplyBlock(content: string): string {
+  return content.replace(/```APPLY_SCHEME\s*\n[\s\S]*?\n```/g, "").trim();
+}
+
 const TypingIndicator = () => (
   <div className="flex items-center gap-1.5 px-4 py-3">
     {[0, 1, 2].map((i) => (
@@ -85,44 +109,68 @@ const TypingIndicator = () => (
   </div>
 );
 
-const ChatInterface = () => {
+interface ChatInterfaceProps {
+  mode?: "discover" | "assistant";
+}
+
+const ChatInterface = ({ mode = "assistant" }: ChatInterfaceProps) => {
   const { lang } = useLanguage();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const preSelectedScheme = searchParams.get("scheme");
   const isHi = lang === "hi";
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [applyData, setApplyData] = useState<ApplyData | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const initializedRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, applyData]);
 
-  // Send initial message on mount
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
 
-    let initialMsg = isHi
-      ? "🙏 नमस्ते! मैं सरकार साथी AI हूँ। सरकारी योजनाओं के बारे में कुछ भी पूछें।"
-      : "🙏 Namaste! I'm Sarkar Saathi AI. Ask me anything about government schemes.";
+    let initialMsg: string;
 
-    if (preSelectedScheme) {
+    if (mode === "discover") {
+      initialMsg = isHi
+        ? "🙏 नमस्ते! मैं सरकार साथी AI हूँ। मैं आपके लिए सबसे अच्छी सरकारी योजनाएं ढूंढूँगा। कृपया अपना नाम बताएं।"
+        : "🙏 Namaste! I'm Sarkar Saathi AI. I'll help you find the best government schemes for you. Let's start — what's your name?";
+    } else if (preSelectedScheme) {
       const scheme = schemes.find((s) => s.id === preSelectedScheme);
       if (scheme) {
         initialMsg = isHi
-          ? `🙏 नमस्ते! आप **${scheme.nameHi}** के बारे में जानना चाहते हैं। मैं आपकी पात्रता जाँच सकता हूँ। कृपया अपनी वार्षिक आय, भूमि का आकार, और आधार स्थिति बताएं।`
-          : `🙏 Namaste! You want to know about **${scheme.name}**. I can check your eligibility. Please share your annual income, land size, and Aadhaar status.`;
+          ? `🙏 नमस्ते! आप **${scheme.nameHi}** के बारे में जानना चाहते हैं। मैं आपकी पात्रता जाँच सकता हूँ। कृपया अपना नाम और वार्षिक आय बताएं।`
+          : `🙏 Namaste! You want to know about **${scheme.name}**. I can check your eligibility and help you apply. Please share your name and annual income.`;
+      } else {
+        initialMsg = isHi
+          ? "🙏 नमस्ते! मैं सरकार साथी AI हूँ। सरकारी योजनाओं के बारे में कुछ भी पूछें।"
+          : "🙏 Namaste! I'm Sarkar Saathi AI. Ask me anything about government schemes.";
       }
+    } else {
+      initialMsg = isHi
+        ? "🙏 नमस्ते! मैं सरकार साथी AI हूँ। सरकारी योजनाओं के बारे में कुछ भी पूछें।"
+        : "🙏 Namaste! I'm Sarkar Saathi AI. Ask me anything about government schemes.";
     }
 
     setMessages([{ role: "assistant", content: initialMsg }]);
   }, []);
+
+  // Check for APPLY_SCHEME in messages
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === "assistant" && !isLoading) {
+      const data = extractApplyScheme(lastMsg.content);
+      if (data && !applyData) {
+        setApplyData(data);
+      }
+    }
+  }, [messages, isLoading]);
 
   const sendMessage = async (text?: string) => {
     const msg = text || input.trim();
@@ -149,6 +197,7 @@ const ChatInterface = () => {
     try {
       await streamChat({
         messages: newMessages,
+        mode: mode === "discover" ? "discover" : undefined,
         onDelta: upsert,
         onDone: () => setIsLoading(false),
         onError: (err) => {
@@ -162,13 +211,31 @@ const ChatInterface = () => {
     }
   };
 
-  const quickQuestions = preSelectedScheme
+  const quickQuestions = mode === "discover"
+    ? [
+        isHi ? "मैं एक किसान हूँ" : "I'm a farmer",
+        isHi ? "मुझे स्वास्थ्य बीमा चाहिए" : "I need health insurance",
+        isHi ? "मुझे बिजनेस लोन चाहिए" : "I need a business loan",
+      ]
+    : preSelectedScheme
     ? []
     : [
         isHi ? "मेरे लिए कौन सी योजनाएं उपलब्ध हैं?" : "Which schemes am I eligible for?",
         isHi ? "PM-KISAN क्या है?" : "What is PM-KISAN?",
         isHi ? "आयुष्मान भारत के लिए कैसे अप्लाई करें?" : "How to apply for Ayushman Bharat?",
       ];
+
+  const renderMessageContent = (content: string) => {
+    const cleaned = stripApplyBlock(content);
+    return (
+      <div className="prose prose-sm prose-invert max-w-none [&>p]:m-0 [&>ul]:my-1 [&>ol]:my-1">
+        <ReactMarkdown>{cleaned}</ReactMarkdown>
+      </div>
+    );
+  };
+
+  const title = mode === "discover" ? (isHi ? "योजना खोजें" : "Find Schemes") : "Sarkar Saathi";
+  const subtitle = mode === "discover" ? "AI Scheme Finder" : "AI Assistant";
 
   return (
     <div className="min-h-screen flex items-center justify-center py-10 px-4">
@@ -179,9 +246,9 @@ const ChatInterface = () => {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-1.5 h-5 rounded-full gradient-brand" />
-                <span className="text-xs text-muted-foreground uppercase tracking-widest font-medium">AI Assistant</span>
+                <span className="text-xs text-muted-foreground uppercase tracking-widest font-medium">{subtitle}</span>
               </div>
-              <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-foreground">Sarkar Saathi</h2>
+              <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-foreground">{title}</h2>
             </div>
             <LanguageSelector />
           </div>
@@ -204,7 +271,9 @@ const ChatInterface = () => {
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-white" />
             </div>
             <div className="flex-1">
-              <h3 className="font-['Space_Grotesk'] font-bold text-white text-sm">Sarkar Saathi Bot</h3>
+              <h3 className="font-['Space_Grotesk'] font-bold text-white text-sm">
+                {mode === "discover" ? "Scheme Finder Bot" : "Sarkar Saathi Bot"}
+              </h3>
               <p className="text-xs text-white/70 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
                 Online · AI Powered
@@ -239,11 +308,7 @@ const ChatInterface = () => {
                         : "glass border border-glass text-foreground rounded-bl-sm"
                     }`}
                   >
-                    {msg.role === "assistant" ? (
-                      <div className="prose prose-sm prose-invert max-w-none [&>p]:m-0 [&>ul]:my-1 [&>ol]:my-1">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      </div>
-                    ) : (
+                    {msg.role === "assistant" ? renderMessageContent(msg.content) : (
                       <span className="whitespace-pre-line">{msg.content}</span>
                     )}
                   </div>
@@ -265,6 +330,18 @@ const ChatInterface = () => {
                   <TypingIndicator />
                 </div>
               </div>
+            )}
+
+            {/* Application Form */}
+            {applyData && (
+              <ApplicationForm
+                data={applyData}
+                onClose={() => setApplyData(null)}
+                onSubmitted={() => {
+                  setApplyData(null);
+                  sendMessage("I have submitted my application. What are the next steps?");
+                }}
+              />
             )}
 
             {/* Quick questions */}

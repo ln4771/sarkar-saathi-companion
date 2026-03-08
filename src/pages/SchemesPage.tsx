@@ -1,8 +1,8 @@
-import SchemeExplorer from "@/components/SchemeExplorer";
+import ChatInterface from "@/components/ChatInterface";
 
 const SchemesPage = () => (
   <div className="min-h-screen bg-background">
-    <SchemeExplorer />
+    <ChatInterface mode="discover" />
   </div>
 );
 
