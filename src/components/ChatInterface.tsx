@@ -289,7 +289,7 @@ const ChatInterface = () => {
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendMessage(inputVal)}
-                placeholder={isHi ? "योजनाओं के बारे में कुछ भी पूछें..." : "Ask anything about schemes..."}
+                placeholder={tl({ en: "Ask anything about schemes...", hi: "योजनाओं के बारे में कुछ भी पूछें...", ta: "திட்டங்கள் பற்றி கேளுங்கள்...", mr: "योजनांबद्दल काहीही विचारा...", te: "పథకాల గురించి ఏదైనా అడగండి..." })}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-[hsl(220_20%_8%)] border border-glass text-white placeholder:text-muted-foreground/50 text-sm focus:outline-none focus:border-[hsl(28_100%_54%/0.5)] transition-all"
               />
               <button
