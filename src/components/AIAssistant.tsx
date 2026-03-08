@@ -25,10 +25,9 @@ interface Message {
 
 interface ProfileStep {
     key: keyof UserProfile;
-    question: string;
-    questionHi: string;
+    questions: Record<string, string>;
     type: "text" | "number" | "chips";
-    chips?: { value: string; label: string; labelHi: string }[];
+    chips?: { value: string; labels: Record<string, string> }[];
 }
 
 // ─── Category colours ─────────────────────────────────────────────────────────
