@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import LanguageSelector from "./LanguageSelector";
 import ReactMarkdown from "react-markdown";
-import { Send, Bot, User, Mic, MicOff } from "lucide-react";
+import { Send, Bot, User, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useElevenLabsVoice } from "@/hooks/useElevenLabsVoice";
 
 interface Message {
   role: "assistant" | "user";
@@ -29,13 +30,8 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [listening, setListening] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-
-  const langMap: Record<string, string> = {
-    en: "en-IN", hi: "hi-IN", ta: "ta-IN", mr: "mr-IN", te: "te-IN",
-  };
+  const { listening, speaking, voiceEnabled, setVoiceEnabled, speak, stopSpeaking, startListening, stopListening } = useElevenLabsVoice();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -93,6 +89,11 @@ const ChatInterface = () => {
           } catch {}
         }
       }
+
+      // Speak the final response
+      if (assistantContent && voiceEnabled) {
+        speak(assistantContent);
+      }
     } catch (e) {
       console.error("Chat error:", e);
       setMessages((prev) => [
@@ -102,28 +103,6 @@ const ChatInterface = () => {
     } finally {
       setStreaming(false);
     }
-  };
-
-  const startListening = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-    const recognition = new SpeechRecognition();
-    recognition.lang = langMap[lang] || "en-IN";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.onresult = (e: any) => {
-      setInputVal(e.results[0][0].transcript);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
-  };
-
-  const stopListening = () => {
-    recognitionRef.current?.stop();
-    setListening(false);
   };
 
   return (
@@ -139,7 +118,16 @@ const ChatInterface = () => {
               </div>
               <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-white">Sarkar Saathi AI</h2>
             </div>
-            <LanguageSelector />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setVoiceEnabled(!voiceEnabled); if (speaking) stopSpeaking(); }}
+                className={`p-2 rounded-xl glass border transition-all ${voiceEnabled ? "border-[hsl(28_100%_54%/0.4)] text-[hsl(28,100%,64%)]" : "border-glass text-muted-foreground"}`}
+                title={voiceEnabled ? "Disable voice" : "Enable voice"}
+              >
+                {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
+              <LanguageSelector />
+            </div>
           </div>
         </motion.div>
 
@@ -263,8 +251,8 @@ const ChatInterface = () => {
           <div className="p-3 border-t border-glass shrink-0">
             <div className="flex gap-2 items-center">
               <button
-                onMouseDown={startListening}
-                onMouseUp={stopListening}
+                onMouseDown={() => startListening()}
+                onMouseUp={async () => { const text = await stopListening(); if (text) setInputVal(text); }}
                 className={`p-2.5 rounded-xl border transition-all duration-200 ${
                   listening
                     ? "gradient-brand border-transparent text-white shadow-brand animate-pulse"

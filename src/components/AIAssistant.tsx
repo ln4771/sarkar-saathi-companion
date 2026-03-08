@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import * as Icons from "lucide-react";
 import LanguageSelector from "./LanguageSelector";
+import { useElevenLabsVoice } from "@/hooks/useElevenLabsVoice";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Phase = "profile" | "matching" | "chat" | "form";
@@ -178,61 +179,7 @@ const TypingIndicator = () => (
     </div>
 );
 
-// ─── useVoice hook ────────────────────────────────────────────────────────────
-function useVoice(lang: string) {
-    const [listening, setListening] = useState(false);
-    const [speaking, setSpeaking] = useState(false);
-    const [voiceEnabled, setVoiceEnabled] = useState(true);
-    const recognitionRef = useRef<any>(null);
-    const synthRef = useRef(window.speechSynthesis);
-
-    const langMap: Record<string, string> = {
-        en: "en-IN", hi: "hi-IN", ta: "ta-IN", mr: "mr-IN", te: "te-IN",
-    };
-
-    const speak = useCallback((text: string) => {
-        if (!voiceEnabled) return;
-        synthRef.current.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = langMap[lang] || "en-IN";
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.onstart = () => setSpeaking(true);
-        utterance.onend = () => setSpeaking(false);
-        utterance.onerror = () => setSpeaking(false);
-        synthRef.current.speak(utterance);
-    }, [voiceEnabled, lang]);
-
-    const stopSpeaking = useCallback(() => {
-        synthRef.current.cancel();
-        setSpeaking(false);
-    }, []);
-
-    const startListening = useCallback((onResult: (text: string) => void) => {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
-        const recognition = new SpeechRecognition();
-        recognition.lang = langMap[lang] || "en-IN";
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.onresult = (e: any) => {
-            const transcript = e.results[0][0].transcript;
-            onResult(transcript);
-        };
-        recognition.onend = () => setListening(false);
-        recognition.onerror = () => setListening(false);
-        recognitionRef.current = recognition;
-        recognition.start();
-        setListening(true);
-    }, [lang]);
-
-    const stopListening = useCallback(() => {
-        recognitionRef.current?.stop();
-        setListening(false);
-    }, []);
-
-    return { listening, speaking, voiceEnabled, setVoiceEnabled, speak, stopSpeaking, startListening, stopListening };
-}
+// useVoice hook removed — now using useElevenLabsVoice from hooks
 
 // ─── SchemeCard (inside assistant) ───────────────────────────────────────────
 const SchemeResultCard = ({
@@ -506,7 +453,7 @@ const AIAssistant = () => {
     const { lang } = useLanguage();
     const isHi = lang === "hi";
     const navigate = useNavigate();
-    const { listening, speaking, voiceEnabled, setVoiceEnabled, speak, stopSpeaking, startListening, stopListening } = useVoice(lang);
+    const { listening, speaking, voiceEnabled, setVoiceEnabled, speak, stopSpeaking, startListening, stopListening } = useElevenLabsVoice();
 
     const [phase, setPhase] = useState<Phase>("profile");
     const [messages, setMessages] = useState<Message[]>([]);
@@ -827,8 +774,8 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                 <div className="p-3 border-t border-glass shrink-0">
                                     <div className="flex gap-2 items-center">
                                         <button
-                                            onMouseDown={() => startListening((text) => { setInputVal(text); })}
-                                            onMouseUp={stopListening}
+                                            onMouseDown={() => startListening()}
+                                            onMouseUp={async () => { const text = await stopListening(); if (text) setInputVal(text); }}
                                             className={`p-2.5 rounded-xl border transition-all duration-200 ${listening ? "gradient-brand border-transparent text-white shadow-brand animate-pulse" : "glass border-glass text-muted-foreground hover:text-white"
                                                 }`}
                                             title="Hold to speak"
