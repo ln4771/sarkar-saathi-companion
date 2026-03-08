@@ -47,11 +47,7 @@ const ChatInterface = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
-  // Load voices on mount (needed for some browsers)
-  useEffect(() => {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-  }, []);
+  // ElevenLabs handles voice loading automatically
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || streaming) return;
