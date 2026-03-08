@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import LanguageSelector from "./LanguageSelector";
-import { supabase } from "@/integrations/supabase/client";
 import ReactMarkdown from "react-markdown";
 import { Send, Bot, User, Mic, MicOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
