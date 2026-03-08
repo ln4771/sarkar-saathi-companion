@@ -78,8 +78,8 @@ export function useWebSpeech() {
         return;
       }
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = event.results[0]?.[0]?.transcript || "";
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript || "";
         resolve(transcript);
       };
 
