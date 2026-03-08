@@ -14,6 +14,7 @@ import { useElevenLabsVoice } from "@/hooks/useElevenLabsVoice";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Phase = "profile" | "matching" | "chat" | "form";
+type L = Record<string, string>;
 
 interface Message {
     id: string;
@@ -25,139 +26,131 @@ interface Message {
 
 interface ProfileStep {
     key: keyof UserProfile;
-    questions: Record<string, string>;
+    q: L;
     type: "text" | "number" | "chips";
-    chips?: { value: string; labels: Record<string, string> }[];
+    chips?: { value: string; l: L }[];
 }
 
-// ─── Multilingual helper ──────────────────────────────────────────────────────
-type L = Record<string, string>;
+// ─── Multilingual helper ─────────────────────────────────────────────────────
 const tl = (map: L, lang: string) => map[lang] || map["en"];
 
+const yesNo = (lang: string) => [
+    { value: "true", l: { en: "✅ Yes", hi: "✅ हाँ", ta: "✅ ஆம்", mr: "✅ होय", te: "✅ అవును" } },
+    { value: "false", l: { en: "❌ No", hi: "❌ नहीं", ta: "❌ இல்லை", mr: "❌ नाही", te: "❌ కాదు" } },
+];
+
 // ─── Category colours ─────────────────────────────────────────────────────────
+const catColors: Record<string, string> = {
+    Agriculture: "from-lime-500 to-green-600",
+    Health: "from-red-500 to-pink-600",
+    Employment: "from-blue-500 to-cyan-600",
+    Housing: "from-amber-500 to-orange-600",
+    Welfare: "from-purple-500 to-violet-600",
+    Business: "from-cyan-500 to-teal-600",
+    "Women & Child": "from-pink-500 to-rose-600",
+    Education: "from-indigo-500 to-violet-600",
+    Financial: "from-yellow-500 to-amber-600",
+};
+
+// ─── UI strings ──────────────────────────────────────────────────────────────
+const ui = {
+    welcome: { en: "🙏 Namaste! I'm Sarkar Saathi AI. I'll help you find the right government schemes for you.", hi: "🙏 नमस्ते! मैं सरकार साथी AI हूँ। मैं आपको सही सरकारी योजनाएँ खोजने में मदद करूँगा।", ta: "🙏 வணக்கம்! நான் சர்கார் சாதி AI. உங்களுக்கு சரியான அரசு திட்டங்களைக் கண்டறிய உதவுவேன்.", mr: "🙏 नमस्कार! मी सरकार साथी AI आहे. मी तुम्हाला योग्य सरकारी योजना शोधण्यात मदत करेन.", te: "🙏 నమస్కారం! నేను సర్కార్ సాథీ AI. మీకు సరైన ప్రభుత్వ పథకాలను కనుగొనడంలో సహాయం చేస్తాను." },
+    analyzing: { en: "🔍 Perfect! Analyzing your profile to find the best schemes for you...", hi: "🔍 बढ़िया! मैं आपके लिए सबसे अच्छी योजनाएँ खोज रहा हूँ...", ta: "🔍 சிறப்பு! உங்களுக்கான சிறந்த திட்டங்களைத் தேடுகிறேன்...", mr: "🔍 छान! तुमच्यासाठी सर्वोत्तम योजना शोधत आहे...", te: "🔍 అద్భుతం! మీ కోసం ఉత్తమ పథకాలను వెతుకుతున్నాను..." },
+    found: { en: "🎯 I found {n} schemes that match your profile! Tap \"Apply\" on any to start:", hi: "🎯 मुझे आपके लिए {n} उपयुक्त योजनाएँ मिलीं! इनमें से किसी के लिए आवेदन करें:", ta: "🎯 உங்கள் சுயவிவரத்துடன் பொருந்தும் {n} திட்டங்கள் கண்டறியப்பட்டன! விண்ணப்பிக்க தட்டவும்:", mr: "🎯 तुमच्या प्रोफाइलशी जुळणाऱ्या {n} योजना सापडल्या! अर्ज करण्यासाठी टॅप करा:", te: "🎯 మీ ప్రొఫైల్‌కు సరిపోయే {n} పథకాలు దొరికాయి! దరఖాస్తు చేయడానికి నొక్కండి:" },
+    apply: { en: "Apply for this Scheme", hi: "आवेदन करें", ta: "இந்தத் திட்டத்திற்கு விண்ணப்பிக்கவும்", mr: "या योजनेसाठी अर्ज करा", te: "ఈ పథకానికి దరఖాస్తు చేయండి" },
+    askAnything: { en: "Ask me anything about these schemes...", hi: "योजनाओं के बारे में कुछ भी पूछें...", ta: "இந்த திட்டங்கள் பற்றி எதையும் கேளுங்கள்...", mr: "या योजनांबद्दल काहीही विचारा...", te: "ఈ పథకాల గురించి ఏదైనా అడగండి..." },
+    typeOrSpeak: { en: "Type or hold mic to speak...", hi: "यहाँ टाइप करें या माइक दबाएँ...", ta: "டைப் செய்யுங்கள் அல்லது மைக் அழுத்துங்கள்...", mr: "टाइप करा किंवा माइक दाबा...", te: "టైప్ చేయండి లేదా మైక్ నొక్కండి..." },
+    error: { en: "Sorry, something went wrong. Please try again.", hi: "माफ़ करें, कोई त्रुटि हुई। कृपया पुनः प्रयास करें।", ta: "மன்னிக்கவும், ஏதோ தவறு ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.", mr: "क्षमस्व, काहीतरी चूक झाली. कृपया पुन्हा प्रयत्न करा.", te: "క్షమించండి, ఏదో తప్పు జరిగింది. దయచేసి మళ్ళీ ప్రయత్నించండి." },
+    micHint: { en: "Hold mic button to speak in Hindi, Tamil, Telugu, Marathi & more", hi: "माइक बटन दबाकर बोलें — हिंदी, तमिल, तेलुगु, मराठी में भी", ta: "மைக் பொத்தானை அழுத்திப் பிடித்து பேசுங்கள்", mr: "माइक बटन दाबून बोला — हिंदी, तमिळ, तेलुगू, मराठीमध्ये", te: "మైక్ బటన్ నొక్కి మాట్లాడండి" },
+    myApps: { en: "My Applications", hi: "मेरे आवेदन", ta: "எனது விண்ணப்பங்கள்", mr: "माझे अर्ज", te: "నా దరఖాస్తులు" },
+};
 
 // ─── Profile questions ────────────────────────────────────────────────────────
 const profileSteps: ProfileStep[] = [
     {
-        key: "name",
-        question: "First, may I know your name? 😊",
-        questionHi: "पहले, क्या मैं आपका नाम जान सकता हूँ? 😊",
-        type: "text",
+        key: "name", type: "text",
+        q: { en: "First, may I know your name? 😊", hi: "पहले, क्या मैं आपका नाम जान सकता हूँ? 😊", ta: "முதலில், உங்கள் பெயரை அறியலாமா? 😊", mr: "प्रथम, मी तुमचे नाव जाणून घेऊ शकतो का? 😊", te: "మొదట, మీ పేరు తెలుసుకోవచ్చా? 😊" },
     },
     {
-        key: "age",
-        question: "How old are you?",
-        questionHi: "आपकी उम्र क्या है?",
-        type: "number",
+        key: "age", type: "number",
+        q: { en: "How old are you?", hi: "आपकी उम्र क्या है?", ta: "உங்கள் வயது என்ன?", mr: "तुमचे वय किती आहे?", te: "మీ వయసు ఎంత?" },
     },
     {
-        key: "gender",
-        question: "What is your gender?",
-        questionHi: "आपका लिंग क्या है?",
-        type: "chips",
+        key: "gender", type: "chips",
+        q: { en: "What is your gender?", hi: "आपका लिंग क्या है?", ta: "உங்கள் பாலினம் என்ன?", mr: "तुमचे लिंग काय आहे?", te: "మీ లింగం ఏమిటి?" },
         chips: [
-            { value: "male", label: "Male", labelHi: "पुरुष" },
-            { value: "female", label: "Female", labelHi: "महिला" },
-            { value: "other", label: "Other", labelHi: "अन्य" },
+            { value: "male", l: { en: "Male", hi: "पुरुष", ta: "ஆண்", mr: "पुरुष", te: "పురుషుడు" } },
+            { value: "female", l: { en: "Female", hi: "महिला", ta: "பெண்", mr: "स्त्री", te: "స్త్రీ" } },
+            { value: "other", l: { en: "Other", hi: "अन्य", ta: "மற்றவை", mr: "इतर", te: "ఇతరం" } },
         ],
     },
     {
-        key: "state",
-        question: "Which state are you from?",
-        questionHi: "आप किस राज्य से हैं?",
-        type: "chips",
+        key: "state", type: "chips",
+        q: { en: "Which state are you from?", hi: "आप किस राज्य से हैं?", ta: "நீங்கள் எந்த மாநிலத்தைச் சேர்ந்தவர்?", mr: "तुम्ही कोणत्या राज्यातून आहात?", te: "మీరు ఏ రాష్ట్రం నుండి?" },
         chips: [
-            { value: "UP", label: "Uttar Pradesh", labelHi: "उत्तर प्रदेश" },
-            { value: "MH", label: "Maharashtra", labelHi: "महाराष्ट्र" },
-            { value: "RJ", label: "Rajasthan", labelHi: "राजस्थान" },
-            { value: "MP", label: "Madhya Pradesh", labelHi: "मध्य प्रदेश" },
-            { value: "GJ", label: "Gujarat", labelHi: "गुजरात" },
-            { value: "TN", label: "Tamil Nadu", labelHi: "तमिलनाडु" },
-            { value: "AP", label: "Andhra Pradesh", labelHi: "आंध्र प्रदेश" },
-            { value: "TS", label: "Telangana", labelHi: "तेलंगाना" },
-            { value: "KA", label: "Karnataka", labelHi: "कर्नाटक" },
-            { value: "OT", label: "Other State", labelHi: "अन्य राज्य" },
+            { value: "UP", l: { en: "Uttar Pradesh", hi: "उत्तर प्रदेश", ta: "உத்தர பிரதேசம்", mr: "उत्तर प्रदेश", te: "ఉత్తర ప్రదేశ్" } },
+            { value: "MH", l: { en: "Maharashtra", hi: "महाराष्ट्र", ta: "மகாராஷ்டிரா", mr: "महाराष्ट्र", te: "మహారాష్ట్ర" } },
+            { value: "RJ", l: { en: "Rajasthan", hi: "राजस्थान", ta: "ராஜஸ்தான்", mr: "राजस्थान", te: "రాజస్థాన్" } },
+            { value: "MP", l: { en: "Madhya Pradesh", hi: "मध्य प्रदेश", ta: "மத்திய பிரதேசம்", mr: "मध्य प्रदेश", te: "మధ్య ప్రదేశ్" } },
+            { value: "GJ", l: { en: "Gujarat", hi: "गुजरात", ta: "குஜராத்", mr: "गुजरात", te: "గుజరాత్" } },
+            { value: "TN", l: { en: "Tamil Nadu", hi: "तमिलनाडु", ta: "தமிழ்நாடு", mr: "तमिळनाडू", te: "తమిళనాడు" } },
+            { value: "AP", l: { en: "Andhra Pradesh", hi: "आंध्र प्रदेश", ta: "ஆந்திர பிரதேசம்", mr: "आंध्र प्रदेश", te: "ఆంధ్ర ప్రదేశ్" } },
+            { value: "TS", l: { en: "Telangana", hi: "तेलंगाना", ta: "தெலங்கானா", mr: "तेलंगणा", te: "తెలంగాణ" } },
+            { value: "KA", l: { en: "Karnataka", hi: "कर्नाटक", ta: "கர்நாடகா", mr: "कर्नाटक", te: "కర్ణాటక" } },
+            { value: "OT", l: { en: "Other State", hi: "अन्य राज्य", ta: "பிற மாநிலம்", mr: "इतर राज्य", te: "ఇతర రాష్ట్రం" } },
         ],
     },
     {
-        key: "occupation",
-        question: "What is your main occupation?",
-        questionHi: "आपका मुख्य व्यवसाय क्या है?",
-        type: "chips",
+        key: "occupation", type: "chips",
+        q: { en: "What is your main occupation?", hi: "आपका मुख्य व्यवसाय क्या है?", ta: "உங்கள் முக்கிய தொழில் என்ன?", mr: "तुमचा मुख्य व्यवसाय काय आहे?", te: "మీ ప్రధాన వృత్తి ఏమిటి?" },
         chips: [
-            { value: "farmer", label: "🌾 Farmer", labelHi: "🌾 किसान" },
-            { value: "labourer", label: "🔨 Daily Labourer", labelHi: "🔨 दैनिक मजदूर" },
-            { value: "business", label: "🏪 Business Owner", labelHi: "🏪 व्यापारी" },
-            { value: "student", label: "📚 Student", labelHi: "📚 छात्र" },
-            { value: "unemployed", label: "🔍 Unemployed", labelHi: "🔍 बेरोजगार" },
-            { value: "other", label: "👤 Other", labelHi: "👤 अन्य" },
+            { value: "farmer", l: { en: "🌾 Farmer", hi: "🌾 किसान", ta: "🌾 விவசாயி", mr: "🌾 शेतकरी", te: "🌾 రైతు" } },
+            { value: "labourer", l: { en: "🔨 Daily Labourer", hi: "🔨 दैनिक मजदूर", ta: "🔨 தினக்கூலி", mr: "🔨 दैनिक मजूर", te: "🔨 దినసరి కూలీ" } },
+            { value: "business", l: { en: "🏪 Business Owner", hi: "🏪 व्यापारी", ta: "🏪 வணிக உரிமையாளர்", mr: "🏪 व्यापारी", te: "🏪 వ్యాపారి" } },
+            { value: "student", l: { en: "📚 Student", hi: "📚 छात्र", ta: "📚 மாணவர்", mr: "📚 विद्यार्थी", te: "📚 విద్యార్థి" } },
+            { value: "unemployed", l: { en: "🔍 Unemployed", hi: "🔍 बेरोजगार", ta: "🔍 வேலையில்லாத", mr: "🔍 बेरोजगार", te: "🔍 నిరుద్యోగి" } },
+            { value: "other", l: { en: "👤 Other", hi: "👤 अन्य", ta: "👤 மற்றவை", mr: "👤 इतर", te: "👤 ఇతరం" } },
         ],
     },
     {
-        key: "annualIncome",
-        question: "What is your approximate annual household income (in ₹)?",
-        questionHi: "आपकी अनुमानित वार्षिक पारिवारिक आय क्या है (₹ में)?",
-        type: "number",
+        key: "annualIncome", type: "number",
+        q: { en: "What is your approximate annual household income (in ₹)?", hi: "आपकी अनुमानित वार्षिक पारिवारिक आय क्या है (₹ में)?", ta: "உங்கள் தோராயமான வருடாந்திர குடும்ப வருமானம் (₹)?", mr: "तुमचे अंदाजे वार्षिक कौटुंबिक उत्पन्न (₹ मध्ये)?", te: "మీ సుమారు వార్షిక కుటుంబ ఆదాయం (₹లో)?" },
     },
     {
-        key: "category",
-        question: "What is your caste/social category?",
-        questionHi: "आपकी जाति/सामाजिक श्रेणी क्या है?",
-        type: "chips",
+        key: "category", type: "chips",
+        q: { en: "What is your caste/social category?", hi: "आपकी जाति/सामाजिक श्रेणी क्या है?", ta: "உங்கள் சாதி/சமூக வகை என்ன?", mr: "तुमची जात/सामाजिक श्रेणी काय आहे?", te: "మీ కులం/సామాజిక వర్గం ఏమిటి?" },
         chips: [
-            { value: "SC", label: "Scheduled Caste (SC)", labelHi: "अनुसूचित जाति (SC)" },
-            { value: "ST", label: "Scheduled Tribe (ST)", labelHi: "अनुसूचित जनजाति (ST)" },
-            { value: "OBC", label: "OBC", labelHi: "OBC" },
-            { value: "General", label: "General", labelHi: "सामान्य" },
-            { value: "EWS", label: "EWS", labelHi: "EWS" },
-            { value: "Minority", label: "Minority", labelHi: "अल्पसंख्यक" },
+            { value: "SC", l: { en: "Scheduled Caste (SC)", hi: "अनुसूचित जाति (SC)", ta: "பட்டியல் சாதி (SC)", mr: "अनुसूचित जाती (SC)", te: "షెడ్యూల్డ్ కులం (SC)" } },
+            { value: "ST", l: { en: "Scheduled Tribe (ST)", hi: "अनुसूचित जनजाति (ST)", ta: "பழங்குடி (ST)", mr: "अनुसूचित जमाती (ST)", te: "షెడ్యూల్డ్ తెగ (ST)" } },
+            { value: "OBC", l: { en: "OBC", hi: "OBC", ta: "OBC", mr: "OBC", te: "OBC" } },
+            { value: "General", l: { en: "General", hi: "सामान्य", ta: "பொது", mr: "सामान्य", te: "జనరల్" } },
+            { value: "EWS", l: { en: "EWS", hi: "EWS", ta: "EWS", mr: "EWS", te: "EWS" } },
+            { value: "Minority", l: { en: "Minority", hi: "अल्पसंख्यक", ta: "சிறுபான்மையினர்", mr: "अल्पसंख्याक", te: "మైనారిటీ" } },
         ],
     },
     {
-        key: "landHolding",
-        question: "Do you own agricultural land? If yes, how many acres? (Enter 0 if none)",
-        questionHi: "क्या आपके पास कृषि भूमि है? यदि हाँ, तो कितने एकड़? (नहीं है तो 0 लिखें)",
-        type: "number",
+        key: "landHolding", type: "number",
+        q: { en: "Do you own agricultural land? If yes, how many acres? (Enter 0 if none)", hi: "क्या आपके पास कृषि भूमि है? यदि हाँ, तो कितने एकड़? (नहीं है तो 0 लिखें)", ta: "உங்களுக்கு விவசாய நிலம் உள்ளதா? இருந்தால் எத்தனை ஏக்கர்? (இல்லை என்றால் 0)", mr: "तुमच्याकडे शेतजमीन आहे का? असल्यास किती एकर? (नसल्यास 0 लिहा)", te: "మీకు వ్యవసాయ భూమి ఉందా? ఉంటే ఎన్ని ఎకరాలు? (లేకపోతే 0)" },
     },
     {
-        key: "hasBankAccount",
-        question: "Do you have a bank account?",
-        questionHi: "क्या आपके पास बैंक खाता है?",
-        type: "chips",
-        chips: [
-            { value: "true", label: "✅ Yes", labelHi: "✅ हाँ" },
-            { value: "false", label: "❌ No", labelHi: "❌ नहीं" },
-        ],
+        key: "hasBankAccount", type: "chips",
+        q: { en: "Do you have a bank account?", hi: "क्या आपके पास बैंक खाता है?", ta: "உங்களிடம் வங்கிக் கணக்கு உள்ளதா?", mr: "तुमचे बँक खाते आहे का?", te: "మీకు బ్యాంక్ ఖాతా ఉందా?" },
+        chips: yesNo(""),
     },
     {
-        key: "hasBPLCard",
-        question: "Do you have a BPL (Below Poverty Line) ration card?",
-        questionHi: "क्या आपके पास BPL राशन कार्ड है?",
-        type: "chips",
-        chips: [
-            { value: "true", label: "✅ Yes", labelHi: "✅ हाँ" },
-            { value: "false", label: "❌ No", labelHi: "❌ नहीं" },
-        ],
+        key: "hasBPLCard", type: "chips",
+        q: { en: "Do you have a BPL (Below Poverty Line) ration card?", hi: "क्या आपके पास BPL राशन कार्ड है?", ta: "உங்களிடம் BPL ரேஷன் கார்டு உள்ளதா?", mr: "तुमच्याकडे BPL रेशन कार्ड आहे का?", te: "మీ దగ్గర BPL రేషన్ కార్డ్ ఉందా?" },
+        chips: yesNo(""),
     },
     {
-        key: "hasLPGConnection",
-        question: "Do you have an LPG gas connection at home?",
-        questionHi: "क्या आपके घर में LPG गैस कनेक्शन है?",
-        type: "chips",
-        chips: [
-            { value: "true", label: "✅ Yes", labelHi: "✅ हाँ" },
-            { value: "false", label: "❌ No", labelHi: "❌ नहीं" },
-        ],
+        key: "hasLPGConnection", type: "chips",
+        q: { en: "Do you have an LPG gas connection at home?", hi: "क्या आपके घर में LPG गैस कनेक्शन है?", ta: "உங்கள் வீட்டில் LPG இணைப்பு உள்ளதா?", mr: "तुमच्या घरी LPG गॅस कनेक्शन आहे का?", te: "మీ ఇంట్లో LPG గ్యాస్ కనెక్షన్ ఉందా?" },
+        chips: yesNo(""),
     },
     {
-        key: "hasGirlChild",
-        question: "Do you have a girl child under 10 years old?",
-        questionHi: "क्या आपके परिवार में 10 वर्ष से कम उम्र की बेटी है?",
-        type: "chips",
-        chips: [
-            { value: "true", label: "✅ Yes", labelHi: "✅ हाँ" },
-            { value: "false", label: "❌ No", labelHi: "❌ नहीं" },
-        ],
+        key: "hasGirlChild", type: "chips",
+        q: { en: "Do you have a girl child under 10 years old?", hi: "क्या आपके परिवार में 10 वर्ष से कम उम्र की बेटी है?", ta: "உங்கள் குடும்பத்தில் 10 வயதுக்குட்பட்ட பெண் குழந்தை உள்ளதா?", mr: "तुमच्या कुटुंबात 10 वर्षांखालील मुलगी आहे का?", te: "మీ కుటుంబంలో 10 సంవత్సరాల లోపు ఆడపిల్ల ఉందా?" },
+        chips: yesNo(""),
     },
 ];
 
@@ -171,34 +164,27 @@ const TypingIndicator = () => (
     </div>
 );
 
-// useVoice hook removed — now using useElevenLabsVoice from hooks
-
-// ─── SchemeCard (inside assistant) ───────────────────────────────────────────
+// ─── SchemeCard ──────────────────────────────────────────────────────────────
 const SchemeResultCard = ({
     scheme, score, reasons, onApply
 }: {
     scheme: Scheme; score: number; reasons: string[]; onApply: (s: Scheme) => void;
 }) => {
     const { lang } = useLanguage();
-    const isHi = lang === "hi";
     const IconComp = (Icons as any)[scheme.icon] || Icons.FileText;
     const grad = catColors[scheme.category] || "from-gray-500 to-slate-600";
     const pct = Math.min(100, score);
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -2 }}
-            className="glass-card rounded-2xl border border-glass p-4 flex flex-col gap-3"
-        >
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }}
+            className="glass-card rounded-2xl border border-glass p-4 flex flex-col gap-3">
             <div className="flex items-start gap-3">
                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${grad} flex items-center justify-center shrink-0 shadow-lg`}>
                     <IconComp className="h-5 w-5 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-white text-sm leading-tight">{isHi ? scheme.nameHi : scheme.name}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{isHi ? scheme.benefitHi : scheme.benefit}</p>
+                    <h4 className="font-bold text-white text-sm leading-tight">{lang === "hi" ? scheme.nameHi : scheme.name}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "hi" ? scheme.benefitHi : scheme.benefit}</p>
                 </div>
                 <div className="text-right shrink-0">
                     <span className="text-xs font-bold text-[hsl(28,100%,64%)]">{pct}%</span>
@@ -214,19 +200,17 @@ const SchemeResultCard = ({
                     ))}
                 </div>
             )}
-            <button
-                onClick={() => onApply(scheme)}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl gradient-brand text-white text-xs font-semibold shadow-brand hover:shadow-[0_0_30px_hsl(28_100%_54%/0.4)] hover:scale-[1.02] transition-all duration-200"
-            >
+            <button onClick={() => onApply(scheme)}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl gradient-brand text-white text-xs font-semibold shadow-brand hover:shadow-[0_0_30px_hsl(28_100%_54%/0.4)] hover:scale-[1.02] transition-all duration-200">
                 <FileText className="h-3.5 w-3.5" />
-                {isHi ? "आवेदन करें" : "Apply for this Scheme"}
+                {tl(ui.apply, lang)}
                 <ArrowRight className="h-3 w-3" />
             </button>
         </motion.div>
     );
 };
 
-// ─── FormFiller ───────────────────────────────────────────────────────────────
+// ─── FormFiller ──────────────────────────────────────────────────────────────
 const FormFiller = ({
     scheme, onDone, speak, lang
 }: {
@@ -300,7 +284,6 @@ const FormFiller = ({
 
     return (
         <div className="flex flex-col h-full">
-            {/* Scheme header */}
             <div className={`bg-gradient-to-r ${grad} p-4 flex items-center gap-3 shrink-0`}>
                 <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
                     <IconComp className="h-5 w-5 text-white" />
@@ -318,7 +301,6 @@ const FormFiller = ({
                 </div>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 <AnimatePresence>
                     {messages.map((msg, i) => (
@@ -329,8 +311,7 @@ const FormFiller = ({
                                     <Bot className="h-3.5 w-3.5 text-white" />
                                 </div>
                             )}
-                            <div className={`max-w-[80%] rounded-2xl px-3 py-2.5 text-sm whitespace-pre-line leading-relaxed ${msg.from === "user" ? "gradient-brand text-white rounded-br-sm" : "glass border border-glass text-foreground rounded-bl-sm"
-                                }`}>{msg.text}</div>
+                            <div className={`max-w-[80%] rounded-2xl px-3 py-2.5 text-sm whitespace-pre-line leading-relaxed ${msg.from === "user" ? "gradient-brand text-white rounded-br-sm" : "glass border border-glass text-foreground rounded-bl-sm"}`}>{msg.text}</div>
                             {msg.from === "user" && (
                                 <div className="w-7 h-7 rounded-full glass border border-glass flex items-center justify-center shrink-0">
                                     <User className="h-3.5 w-3.5 text-muted-foreground" />
@@ -349,11 +330,9 @@ const FormFiller = ({
                     </div>
                 )}
 
-                {/* Select options */}
                 {!submitted && !typing && currentIdx < scheme.formFields.length &&
                     scheme.formFields[currentIdx].type === "select" && messages.length > 0 && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                            className="flex flex-wrap gap-2 pl-9">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-wrap gap-2 pl-9">
                             {scheme.formFields[currentIdx].options?.map((opt) => (
                                 <button key={opt.value}
                                     onClick={() => handleOption(opt.value, isHi ? opt.labelHi : opt.label)}
@@ -364,7 +343,6 @@ const FormFiller = ({
                         </motion.div>
                     )}
 
-                {/* Submitted summary */}
                 {submitted && (
                     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
                         className="glass-card rounded-2xl border border-emerald-500/30 p-4 mt-4">
@@ -416,7 +394,6 @@ const FormFiller = ({
                 <div ref={bottomRef} />
             </div>
 
-            {/* Input */}
             {!submitted && !typing && currentIdx < scheme.formFields.length &&
                 scheme.formFields[currentIdx].type !== "select" && (
                     <div className="p-3 border-t border-glass shrink-0">
@@ -443,7 +420,6 @@ const FormFiller = ({
 // ─── Main AIAssistant ─────────────────────────────────────────────────────────
 const AIAssistant = () => {
     const { lang } = useLanguage();
-    const isHi = lang === "hi";
     const navigate = useNavigate();
     const { listening, speaking, voiceEnabled, setVoiceEnabled, speak, speakSequentially, stopSpeaking, startListening, stopListening } = useElevenLabsVoice(lang);
 
@@ -476,17 +452,14 @@ const AIAssistant = () => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, typing]);
 
-    // Start profile collection — speak welcome then question sequentially
+    // Start profile collection
     useEffect(() => {
-        const welcome = isHi
-            ? "🙏 नमस्ते! मैं सरकार साथी AI हूँ। मैं आपको सही सरकारी योजनाएँ खोजने में मदद करूँगा।"
-            : "🙏 Namaste! I'm Sarkar Saathi AI. I'll help you find the right government schemes for you.";
+        const welcome = tl(ui.welcome, lang);
         addBotMsg(welcome, "text", undefined, false);
         setTimeout(() => {
             const step = profileSteps[0];
-            const q = isHi ? step.questionHi : step.question;
+            const q = tl(step.q, lang);
             addBotMsg(q, step.type === "chips" ? "chips" : "text", step.chips, false);
-            // Speak both sequentially after both appear
             if (voiceEnabled) speakSequentially([welcome, q]);
         }, 1800);
     }, []);
@@ -497,25 +470,20 @@ const AIAssistant = () => {
             return;
         }
         const step = profileSteps[idx];
-        const q = isHi ? step.questionHi : step.question;
+        const q = tl(step.q, lang);
         addBotMsg(q, step.type === "chips" ? "chips" : "text", step.chips);
     };
 
     const finishProfile = () => {
         setPhase("matching");
-        const analyzing = isHi
-            ? "🔍 बढ़िया! मैं आपके लिए सबसे अच्छी योजनाएँ खोज रहा हूँ..."
-            : "🔍 Perfect! Analyzing your profile to find the best schemes for you...";
-        addBotMsg(analyzing);
+        addBotMsg(tl(ui.analyzing, lang));
         setTimeout(() => {
             const profile = profileData as UserProfile;
             profile.isStudent = profile.occupation === "student";
             profile.hasAadhaar = true;
             const results = matchSchemes(profile);
             setMatchedSchemes(results);
-            const found = isHi
-                ? `🎯 मुझे आपके लिए ${results.length} उपयुक्त योजनाएँ मिलीं! इनमें से किसी के लिए आवेदन करें:`
-                : `🎯 I found ${results.length} schemes that match your profile! Tap "Apply" on any to start:`;
+            const found = tl(ui.found, lang).replace("{n}", String(results.length));
             setMessages(p => [...p, { id: uid(), from: "bot", text: found, type: "schemes", meta: results }]);
             setPhase("chat");
         }, 2000);
@@ -539,8 +507,8 @@ const AIAssistant = () => {
         setTimeout(() => askProfileQuestion(next), 600);
     };
 
-    const handleChipSelect = (chip: { value: string; label: string; labelHi: string }) => {
-        handleProfileAnswer(chip.value, isHi ? chip.labelHi : chip.label);
+    const handleChipSelect = (chip: { value: string; l: L }) => {
+        handleProfileAnswer(chip.value, tl(chip.l, lang));
     };
 
     const handleTextInput = () => {
@@ -621,7 +589,7 @@ Keep responses brief, polite, and directly address the user's profile and matche
         } catch (e) {
             console.error(e);
             setTyping(false);
-            addBotMsg(isHi ? "माफ़ करें, कोई त्रुटि हुई। कृपया पुनः प्रयास करें।" : "Sorry, something went wrong. Please try again.");
+            addBotMsg(tl(ui.error, lang));
         }
     };
 
@@ -669,7 +637,6 @@ Keep responses brief, polite, and directly address the user's profile and matche
                             <LanguageSelector />
                         </div>
                     </div>
-
                 </motion.div>
 
                 {/* FORM PHASE */}
@@ -702,7 +669,6 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                         {speaking ? "Speaking..." : listening ? "Listening..." : "Online · AI Powered"}
                                     </p>
                                 </div>
-
                                 <div className="flex items-center gap-1.5">
                                     {["bg-red-400", "bg-amber-400", "bg-emerald-400"].map((c, i) => (
                                         <div key={i} className={`w-2.5 h-2.5 rounded-full ${c}`} />
@@ -710,7 +676,7 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                 </div>
                             </div>
 
-                            {/* Progress bar for profile */}
+                            {/* Progress bar */}
                             {phase === "profile" && (
                                 <div className="px-5 pt-2 pb-0 shrink-0">
                                     <div className="flex items-center gap-2">
@@ -736,8 +702,7 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                             )}
                                             <div className={`max-w-[80%] ${msg.type === "schemes" ? "w-full max-w-full" : ""}`}>
                                                 {(msg.type === "text" || msg.type === "chips" || !msg.type) && (
-                                                    <div className={`rounded-2xl px-4 py-3 text-sm whitespace-pre-line leading-relaxed ${msg.from === "user" ? "gradient-brand text-white rounded-br-sm shadow-brand" : "glass border border-glass text-foreground rounded-bl-sm"
-                                                        }`}>{msg.text}</div>
+                                                    <div className={`rounded-2xl px-4 py-3 text-sm whitespace-pre-line leading-relaxed ${msg.from === "user" ? "gradient-brand text-white rounded-br-sm shadow-brand" : "glass border border-glass text-foreground rounded-bl-sm"}`}>{msg.text}</div>
                                                 )}
                                                 {msg.type === "schemes" && (
                                                     <div className="space-y-2 w-full">
@@ -778,13 +743,13 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                 )}
 
                                 {/* Chip options */}
-                                {showChips && currentStep.chips && (
+                                {showChips && currentStep?.chips && (
                                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                                         className="flex flex-wrap gap-2 pl-10">
                                         {currentStep.chips.map((chip) => (
                                             <button key={chip.value} onClick={() => handleChipSelect(chip)}
                                                 className="px-4 py-2 rounded-2xl glass border border-glass text-sm font-medium text-foreground hover:border-[hsl(28_100%_54%/0.5)] hover:text-white hover:bg-[hsl(28_100%_54%/0.08)] active:scale-95 transition-all duration-200">
-                                                {isHi ? chip.labelHi : chip.label}
+                                                {tl(chip.l, lang)}
                                             </button>
                                         ))}
                                     </motion.div>
@@ -800,8 +765,7 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                         <button
                                             onMouseDown={() => startListening()}
                                             onMouseUp={async () => { const text = await stopListening(); if (text) setInputVal(text); }}
-                                            className={`p-2.5 rounded-xl border transition-all duration-200 ${listening ? "gradient-brand border-transparent text-white shadow-brand animate-pulse" : "glass border-glass text-muted-foreground hover:text-white"
-                                                }`}
+                                            className={`p-2.5 rounded-xl border transition-all duration-200 ${listening ? "gradient-brand border-transparent text-white shadow-brand animate-pulse" : "glass border-glass text-muted-foreground hover:text-white"}`}
                                             title="Hold to speak"
                                         >
                                             {listening ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
@@ -811,9 +775,7 @@ Keep responses brief, polite, and directly address the user's profile and matche
                                             value={inputVal}
                                             onChange={e => setInputVal(e.target.value)}
                                             onKeyDown={e => e.key === "Enter" && handleTextInput()}
-                                            placeholder={phase === "chat"
-                                                ? (isHi ? "योजनाओं के बारे में कुछ भी पूछें..." : "Ask me anything about these schemes...")
-                                                : (isHi ? "यहाँ टाइप करें या माइक दबाएँ..." : "Type or hold mic to speak...")}
+                                            placeholder={phase === "chat" ? tl(ui.askAnything, lang) : tl(ui.typeOrSpeak, lang)}
                                             className="flex-1 px-4 py-2.5 rounded-xl bg-[hsl(220_20%_8%)] border border-glass text-white placeholder:text-muted-foreground/50 text-sm focus:outline-none focus:border-[hsl(28_100%_54%/0.5)] transition-all"
                                         />
                                         <button onClick={handleTextInput}
@@ -831,7 +793,7 @@ Keep responses brief, polite, and directly address the user's profile and matche
                 {/* Voice hint */}
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
                     className="text-center text-xs text-muted-foreground mt-3">
-                    🎙️ {isHi ? "माइक बटन दबाकर बोलें — हिंदी, तमिल, तेलुगु, मराठी में भी" : "Hold mic button to speak in Hindi, Tamil, Telugu, Marathi & more"}
+                    🎙️ {tl(ui.micHint, lang)}
                 </motion.p>
             </div>
         </div>
