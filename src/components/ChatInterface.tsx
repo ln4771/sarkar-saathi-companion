@@ -89,6 +89,11 @@ const ChatInterface = () => {
           } catch {}
         }
       }
+
+      // Speak the final response
+      if (assistantContent && voiceEnabled) {
+        speak(assistantContent);
+      }
     } catch (e) {
       console.error("Chat error:", e);
       setMessages((prev) => [
@@ -98,28 +103,6 @@ const ChatInterface = () => {
     } finally {
       setStreaming(false);
     }
-  };
-
-  const startListening = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-    const recognition = new SpeechRecognition();
-    recognition.lang = langMap[lang] || "en-IN";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.onresult = (e: any) => {
-      setInputVal(e.results[0][0].transcript);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
-  };
-
-  const stopListening = () => {
-    recognitionRef.current?.stop();
-    setListening(false);
   };
 
   return (
