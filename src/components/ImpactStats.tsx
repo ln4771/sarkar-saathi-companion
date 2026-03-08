@@ -149,19 +149,6 @@ const ImpactStats = () => {
           ))}
         </div>
 
-        {/* CTA strip */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.4, duration: 0.6 }}
-          className="mt-10 glass rounded-2xl border border-glass p-6 text-center"
-        >
-          <p className="text-muted-foreground text-sm">
-            Trusted by thousands of citizens across India.{" "}
-            <span className="text-[hsl(28,100%,64%)] font-medium">Start your journey today →</span>
-          </p>
-        </motion.div>
       </div>
     </section>
   );
