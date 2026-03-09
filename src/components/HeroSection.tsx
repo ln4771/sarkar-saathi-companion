@@ -96,7 +96,7 @@ const HeroSection = () => {
           {/* CTA Buttons */}
           <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
             <a
-              href="https://wa.link/nk6p7f"
+              href="https://wa.me/14155238886"
               target="_blank"
               rel="noopener noreferrer"
               className="group inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl gradient-brand text-white font-semibold text-base shadow-brand hover:shadow-[0_0_60px_hsl(28_100%_54%/0.4)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
